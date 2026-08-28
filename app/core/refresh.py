@@ -12,6 +12,7 @@ from typing import cast
 from urllib.request import Request, urlopen
 
 from app.core.database import Database
+from app.core.provider_status import ProviderRefreshState, ProviderRefreshStatus, ProviderStatusTracker
 from app.providers.base import TransitProvider
 from app.repositories.gtfs_realtime import replace_realtime_delays
 from app.repositories.gtfs_static import append_static_feed_from_payload, replace_static_feed_from_payload
@@ -37,54 +38,88 @@ class RefreshService:
         self._database = database
         self._providers = providers
         self._static_refresh_interval = timedelta(seconds=static_refresh_seconds)
+        self._status_tracker = ProviderStatusTracker(tuple(provider.slug for provider in providers))
+
+    def statuses(self) -> tuple[ProviderRefreshStatus, ...]:
+        """Return current refresh status for every configured provider."""
+        return self._status_tracker.snapshots()
 
     async def refresh_all(self) -> None:
         """Refresh all configured providers without one failure stopping the others."""
         for provider in self._providers:
             self._ensure_provider(provider)
-        await self._refresh_static_feeds()
+        static_failures = await self._refresh_static_feeds()
         for provider in self._providers:
             try:
                 await asyncio.to_thread(self._refresh_auxiliary_data, provider)
             except Exception:
                 LOGGER.exception("Refresh failed for provider %s", provider.slug)
+                self._status_tracker.set(provider.slug, ProviderRefreshState.FAILED, 0.0)
+                continue
+            state = ProviderRefreshState.FAILED if provider.slug in static_failures else ProviderRefreshState.VALID
+            progress = 0.0 if state is ProviderRefreshState.FAILED else 1.0
+            self._status_tracker.set(provider.slug, state, progress)
 
-    async def _refresh_static_feeds(self) -> None:
+    async def _refresh_static_feeds(self) -> set[str]:
         due_providers = [provider for provider in self._providers if self._static_refresh_due(provider.slug)]
         if not due_providers:
-            return
+            return set()
         loop = asyncio.get_running_loop()
+        failures: set[str] = set()
         with (
             tempfile.TemporaryDirectory(prefix="iot-open-api-static-") as directory,
             ProcessPoolExecutor(max_workers=min(_STATIC_WORKER_COUNT, len(due_providers))) as executor,
         ):
-            tasks = []
+            tasks: list[tuple[str, asyncio.Task[bool]]] = []
             for provider in due_providers:
+                self._status_tracker.set(provider.slug, ProviderRefreshState.DOWNLOADING_SCHEDULE, 0.0)
                 try:
                     static_urls = await asyncio.to_thread(provider.static_feed_urls)
                 except Exception:
                     LOGGER.exception("Could not resolve static feed URL for provider %s", provider.slug)
+                    self._status_tracker.set(provider.slug, ProviderRefreshState.FAILED, 0.0)
+                    failures.add(provider.slug)
                     continue
+                self._status_tracker.set(provider.slug, ProviderRefreshState.DOWNLOADING_SCHEDULE, 0.25)
+                build_task = loop.run_in_executor(
+                    executor,
+                    _build_static_database,
+                    provider.slug,
+                    provider.city,
+                    static_urls,
+                    str(Path(directory) / f"{provider.slug}.sqlite3"),
+                )
                 tasks.append(
-                    loop.run_in_executor(
-                        executor,
-                        _build_static_database,
+                    (
                         provider.slug,
-                        provider.city,
-                        static_urls,
-                        str(Path(directory) / f"{provider.slug}.sqlite3"),
+                        asyncio.create_task(self._install_built_static_feed(provider.slug, build_task)),
                     )
                 )
-            for task in asyncio.as_completed(tasks):
-                try:
-                    provider_slug, staged_path = await task
-                    await asyncio.to_thread(self._install_static_database, provider_slug, Path(staged_path))
-                except Exception:
-                    LOGGER.exception("Static refresh failed")
+            outcomes = await asyncio.gather(*(task for _, task in tasks))
+        failures.update(slug for (slug, _), failed in zip(tasks, outcomes, strict=True) if failed)
+        return failures
+
+    async def _install_built_static_feed(
+        self, expected_provider_slug: str, build_task: asyncio.Future[tuple[str, str]]
+    ) -> bool:
+        """Publish a completed schedule worker database and record failures by provider."""
+        try:
+            provider_slug, staged_path = await build_task
+            if provider_slug != expected_provider_slug:
+                raise ValueError(f"Static worker returned unexpected provider: {provider_slug}")
+            self._status_tracker.set(provider_slug, ProviderRefreshState.UPDATING_SCHEDULE, 0.75)
+            await asyncio.to_thread(self._install_static_database, provider_slug, Path(staged_path))
+        except Exception:
+            LOGGER.exception("Static refresh failed for provider %s", expected_provider_slug)
+            self._status_tracker.set(expected_provider_slug, ProviderRefreshState.FAILED, 0.0)
+            return True
+        return False
 
     def _refresh_auxiliary_data(self, provider: TransitProvider) -> None:
         if provider.trip_updates_url is not None:
+            self._status_tracker.set(provider.slug, ProviderRefreshState.DOWNLOADING_DELAYS, 0.0)
             realtime_payload = _download(provider.trip_updates_url, _MAX_AUXILIARY_BYTES)
+            self._status_tracker.set(provider.slug, ProviderRefreshState.UPDATING_DELAYS, 0.75)
             with self._database.connection() as connection:
                 replace_realtime_delays(connection, provider.slug, realtime_payload)
                 connection.execute(
@@ -92,8 +127,10 @@ class RefreshService:
                     (datetime.now(UTC).isoformat(), provider.slug),
                 )
         if provider.ticket_machines_url is not None:
+            self._status_tracker.set(provider.slug, ProviderRefreshState.DOWNLOADING_TICKET_MACHINES, 0.0)
             machines_payload = _download(provider.ticket_machines_url, _MAX_AUXILIARY_BYTES)
             machines_document = json.loads(machines_payload)
+            self._status_tracker.set(provider.slug, ProviderRefreshState.UPDATING_TICKET_MACHINES, 0.75)
             with self._database.connection() as connection:
                 replace_ticket_machines(connection, provider.slug, machines_document)
 

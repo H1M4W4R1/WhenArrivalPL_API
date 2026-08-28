@@ -31,6 +31,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         database.initialize()
         app.state.database = database
         app.state.providers = {provider.slug: provider for provider in selected_providers}
+        app.state.refresh_service = refresh_service
         task = asyncio.create_task(_refresh_forever(refresh_service, active_settings.refresh_seconds))
         try:
             yield

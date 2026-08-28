@@ -3,9 +3,11 @@
 from fastapi import APIRouter, HTTPException, Path, Query, Request
 
 from app.core.database import Database
+from app.core.refresh import RefreshService
 from app.models.departure_model import DepartureModel
 from app.models.health_model import HealthModel
 from app.models.provider_model import ProviderModel
+from app.models.provider_status_model import ProviderStatusModel
 from app.models.stop_model import StopModel
 from app.models.ticket_machine_model import TicketMachineModel
 from app.providers.base import TransitProvider
@@ -28,6 +30,13 @@ def _providers(request: Request) -> dict[str, TransitProvider]:
     return providers
 
 
+def _refresh_service(request: Request) -> RefreshService:
+    refresh_service = getattr(request.app.state, "refresh_service", None)
+    if not isinstance(refresh_service, RefreshService):
+        raise RuntimeError("Application refresh status is unavailable")
+    return refresh_service
+
+
 def _provider_or_404(provider_slug: str, request: Request) -> TransitProvider:
     provider = _providers(request).get(provider_slug)
     if provider is None:
@@ -39,6 +48,15 @@ def _provider_or_404(provider_slug: str, request: Request) -> TransitProvider:
 def health(request: Request) -> HealthModel:
     """Report readiness without exposing source URLs or secrets."""
     return HealthModel(status="ok", providers=len(_providers(request)))
+
+
+@router.get("/status", response_model=list[ProviderStatusModel])
+def provider_status(request: Request) -> list[ProviderStatusModel]:
+    """Report current refresh state and progress for every configured provider."""
+    return [
+        ProviderStatusModel(slug=item.slug, status=item.state, progress=item.progress)
+        for item in _refresh_service(request).statuses()
+    ]
 
 
 @router.get("/transit", response_model=list[ProviderModel])
