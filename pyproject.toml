@@ -1,0 +1,30 @@
+[project]
+name = "iot-open-api"
+version = "0.1.0"
+description = "Reduced GTFS REST API for embedded devices"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "gtfs-realtime-bindings>=1.0.0,<2.0.0",
+    "tzdata>=2025.2",
+    "uvicorn[standard]>=0.30,<1.0",
+]
+
+[project.scripts]
+iot-open-api = "app.main:run"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["app"]

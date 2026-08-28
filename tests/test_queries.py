@@ -1,0 +1,64 @@
+"""Reduced transit-query tests."""
+
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+from app.core.database import Database
+from app.repositories.transit_queries import schedule, stops
+
+
+def test_schedule_is_ordered_by_delay_and_contains_estimated_time(tmp_path: Path) -> None:
+    database = Database(tmp_path / "transit.sqlite3")
+    database.initialize()
+    with database.connection() as connection:
+        connection.execute("INSERT INTO providers(slug, city) VALUES ('gdansk', 'Gdańsk')")
+        connection.execute("INSERT INTO stops VALUES ('gdansk', 'S1', 'Central', NULL, NULL, NULL)")
+        connection.execute("INSERT INTO service_dates VALUES ('gdansk', 'weekday', '2026-08-28')")
+        connection.execute("INSERT INTO departures VALUES ('gdansk', 'T1', 'S1', 1, 'weekday', 32460, '6', 'Harbour')")
+        connection.execute("INSERT INTO departures VALUES ('gdansk', 'T2', 'S1', 1, 'weekday', 32520, '6', 'Airport')")
+        connection.execute("INSERT INTO realtime_delays VALUES ('gdansk', 'T1', 1, 180, '2026-08-28T09:00:00+00:00')")
+        result = schedule(
+            connection,
+            "gdansk",
+            "Central",
+            10,
+            datetime(2026, 8, 28, 9, 0, tzinfo=ZoneInfo("Europe/Warsaw")),
+        )
+
+    assert [departure.trip_id for departure in result] == ["T2", "T1"]
+    assert result[1].delay_seconds == 180
+    assert result[1].estimated_at.minute == 4
+
+
+def test_schedule_uses_fuzzy_stop_name_only_when_an_exact_name_is_absent(tmp_path: Path) -> None:
+    database = Database(tmp_path / "transit.sqlite3")
+    database.initialize()
+    with database.connection() as connection:
+        connection.execute("INSERT INTO providers(slug, city) VALUES ('gdansk', 'Gdańsk')")
+        connection.execute("INSERT INTO stops VALUES ('gdansk', 'S1', 'Main Station', NULL, NULL, NULL)")
+        connection.execute("INSERT INTO stops VALUES ('gdansk', 'S2', 'Main Station North', NULL, NULL, NULL)")
+        connection.execute("INSERT INTO service_dates VALUES ('gdansk', 'weekday', '2026-08-28')")
+        connection.execute("INSERT INTO departures VALUES ('gdansk', 'T1', 'S1', 1, 'weekday', 32460, '6', 'Harbour')")
+        connection.execute("INSERT INTO departures VALUES ('gdansk', 'T2', 'S2', 1, 'weekday', 32520, '6', 'Airport')")
+        now = datetime(2026, 8, 28, 9, 0, tzinfo=ZoneInfo("Europe/Warsaw"))
+        exact_result = schedule(connection, "gdansk", "main station", 10, now)
+        fuzzy_result = schedule(connection, "gdansk", "station north", 10, now)
+        provider_result = schedule(connection, "gdansk", None, 1, now)
+
+    assert [departure.trip_id for departure in exact_result] == ["T1"]
+    assert exact_result[0].stop_name == "Main Station"
+    assert [departure.trip_id for departure in fuzzy_result] == ["T2"]
+    assert len(provider_result) == 1
+
+
+def test_stops_search_returns_only_fuzzy_name_matches(tmp_path: Path) -> None:
+    database = Database(tmp_path / "transit.sqlite3")
+    database.initialize()
+    with database.connection() as connection:
+        connection.execute("INSERT INTO providers(slug, city) VALUES ('gdansk', 'Gdańsk')")
+        connection.execute("INSERT INTO stops VALUES ('gdansk', 'S1', 'Main Station', NULL, NULL, NULL)")
+        connection.execute("INSERT INTO stops VALUES ('gdansk', 'S2', 'Airport', NULL, NULL, NULL)")
+        result = stops(connection, "gdansk", "station")
+
+    assert [stop.id for stop in result] == ["S1"]
