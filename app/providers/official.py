@@ -33,14 +33,9 @@ def official_providers() -> tuple[TransitProvider, ...]:
             "krakow",
             "Kraków",
             "https://gtfs.ztp.krakow.pl/GTFS_KRK_A.zip",
-            "https://gtfs.ztp.krakow.pl/TripUpdates_A.pb",
             additional_static_urls=(
                 "https://gtfs.ztp.krakow.pl/GTFS_KRK_M.zip",
                 "https://gtfs.ztp.krakow.pl/GTFS_KRK_T.zip",
-            ),
-            additional_trip_update_urls=(
-                "https://gtfs.ztp.krakow.pl/TripUpdates_M.pb",
-                "https://gtfs.ztp.krakow.pl/TripUpdates_T.pb",
             ),
         ),
         OfficialProvider(
