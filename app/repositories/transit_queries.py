@@ -73,7 +73,13 @@ def schedule(
            JOIN service_dates AS sd ON sd.provider_slug = d.provider_slug AND sd.service_id = d.service_id
            LEFT JOIN realtime_delays AS rt ON rt.provider_slug = d.provider_slug
                AND rt.trip_id = d.trip_id AND rt.stop_sequence = d.stop_sequence
+           LEFT JOIN realtime_trip_cancellations AS cancelled ON cancelled.provider_slug = d.provider_slug
+               AND cancelled.trip_id = d.trip_id
+           LEFT JOIN realtime_skipped_stops AS skipped ON skipped.provider_slug = d.provider_slug
+               AND skipped.trip_id = d.trip_id AND skipped.stop_sequence = d.stop_sequence
            WHERE d.provider_slug = ?
+               AND cancelled.trip_id IS NULL
+               AND skipped.trip_id IS NULL
                AND (
                    ? IS NULL
                    OR s.stop_name = ? COLLATE NOCASE

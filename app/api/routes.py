@@ -67,7 +67,7 @@ def providers(request: Request) -> list[ProviderModel]:
             slug=provider.slug,
             city=provider.city,
             enabled=provider.enabled,
-            has_realtime=provider.trip_updates_url is not None,
+            has_realtime=bool(provider.trip_update_urls()),
         )
         for provider in _providers(request).values()
     ]

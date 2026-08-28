@@ -116,12 +116,13 @@ class RefreshService:
         return False
 
     def _refresh_auxiliary_data(self, provider: TransitProvider) -> None:
-        if provider.trip_updates_url is not None:
+        trip_update_urls = provider.trip_update_urls()
+        if trip_update_urls:
             self._status_tracker.set(provider.slug, ProviderRefreshState.DOWNLOADING_DELAYS, 0.0)
-            realtime_payload = _download(provider.trip_updates_url, _MAX_AUXILIARY_BYTES)
+            realtime_payloads = tuple(_download(url, _MAX_AUXILIARY_BYTES) for url in trip_update_urls)
             self._status_tracker.set(provider.slug, ProviderRefreshState.UPDATING_DELAYS, 0.75)
             with self._database.connection() as connection:
-                replace_realtime_delays(connection, provider.slug, realtime_payload)
+                replace_realtime_delays(connection, provider.slug, realtime_payloads)
                 connection.execute(
                     "UPDATE providers SET realtime_updated_at = ? WHERE slug = ?",
                     (datetime.now(UTC).isoformat(), provider.slug),
@@ -138,7 +139,14 @@ class RefreshService:
         """Atomically copy one completed worker database into the shared API database."""
         with self._database.connection() as connection:
             connection.execute("ATTACH DATABASE ? AS staged", (str(staged_path),))
-            for table_name in ("stops", "service_dates", "departures", "realtime_delays"):
+            for table_name in (
+                "stops",
+                "service_dates",
+                "departures",
+                "realtime_delays",
+                "realtime_trip_cancellations",
+                "realtime_skipped_stops",
+            ):
                 connection.execute(f"DELETE FROM {table_name} WHERE provider_slug = ?", (provider_slug,))
             _copy_staged_rows(connection, "stops", provider_slug)
             _copy_staged_rows(connection, "service_dates", provider_slug)

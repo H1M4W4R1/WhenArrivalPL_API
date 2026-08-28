@@ -33,7 +33,14 @@ def parse_static_feed(payload: bytes) -> StaticFeed:
 
 def replace_static_feed(connection: sqlite3.Connection, provider_slug: str, feed: StaticFeed) -> None:
     """Atomically replace a provider's schedule while retaining independent metadata."""
-    for table_name in ("stops", "service_dates", "departures", "realtime_delays"):
+    for table_name in (
+        "stops",
+        "service_dates",
+        "departures",
+        "realtime_delays",
+        "realtime_trip_cancellations",
+        "realtime_skipped_stops",
+    ):
         connection.execute(f"DELETE FROM {table_name} WHERE provider_slug = ?", (provider_slug,))
     connection.executemany(
         """INSERT INTO stops(provider_slug, stop_id, stop_name, stop_code, latitude, longitude)
@@ -78,13 +85,18 @@ def append_static_feed_from_payload(connection: sqlite3.Connection, provider_slu
 
 
 def _delete_static_feed(connection: sqlite3.Connection, provider_slug: str) -> None:
-    for table_name in ("stops", "service_dates", "departures", "realtime_delays"):
+    for table_name in (
+        "stops",
+        "service_dates",
+        "departures",
+        "realtime_delays",
+        "realtime_trip_cancellations",
+        "realtime_skipped_stops",
+    ):
         connection.execute(f"DELETE FROM {table_name} WHERE provider_slug = ?", (provider_slug,))
 
 
-def _stage_trips(
-    connection: sqlite3.Connection, rows: Iterable[Mapping[str, str]], routes: Mapping[str, str]
-) -> None:
+def _stage_trips(connection: sqlite3.Connection, rows: Iterable[Mapping[str, str]], routes: Mapping[str, str]) -> None:
     connection.execute("DROP TABLE IF EXISTS gtfs_import_trips")
     connection.execute(
         """CREATE TEMP TABLE gtfs_import_trips (
@@ -118,9 +130,7 @@ def _insert_trip_batch(connection: sqlite3.Connection, batch: list[tuple[str, st
     )
 
 
-def _insert_departures(
-    connection: sqlite3.Connection, provider_slug: str, rows: Iterable[Mapping[str, str]]
-) -> None:
+def _insert_departures(connection: sqlite3.Connection, provider_slug: str, rows: Iterable[Mapping[str, str]]) -> None:
     batch: list[tuple[str, str, int, int]] = []
     for row in rows:
         item = _stop_time_item(row)
@@ -205,8 +215,7 @@ def _parse_stops(
 
 def _routes(rows: Iterable[Mapping[str, str]]) -> dict[str, str]:
     return {
-        route_id: _first_text(row.get("route_short_name"), row.get("route_long_name"))
-        or route_id
+        route_id: _first_text(row.get("route_short_name"), row.get("route_long_name")) or route_id
         for row in rows
         if (route_id := row.get("route_id", "").strip())
     }

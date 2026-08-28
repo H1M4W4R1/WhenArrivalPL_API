@@ -15,10 +15,15 @@ class OfficialProvider(TransitProvider):
     trip_updates_url: str | None = None
     ticket_machines_url: str | None = None
     additional_static_urls: tuple[str, ...] = ()
+    additional_trip_update_urls: tuple[str, ...] = ()
 
     def static_feed_urls(self) -> tuple[str, ...]:
         """Return every archive that belongs to this provider."""
         return (self.static_url, *self.additional_static_urls)
+
+    def trip_update_urls(self) -> tuple[str, ...]:
+        """Return every TripUpdates feed published for this provider."""
+        return (*super().trip_update_urls(), *self.additional_trip_update_urls)
 
 
 def official_providers() -> tuple[TransitProvider, ...]:
@@ -28,9 +33,14 @@ def official_providers() -> tuple[TransitProvider, ...]:
             "krakow",
             "Kraków",
             "https://gtfs.ztp.krakow.pl/GTFS_KRK_A.zip",
+            "https://gtfs.ztp.krakow.pl/TripUpdates_A.pb",
             additional_static_urls=(
                 "https://gtfs.ztp.krakow.pl/GTFS_KRK_M.zip",
                 "https://gtfs.ztp.krakow.pl/GTFS_KRK_T.zip",
+            ),
+            additional_trip_update_urls=(
+                "https://gtfs.ztp.krakow.pl/TripUpdates_M.pb",
+                "https://gtfs.ztp.krakow.pl/TripUpdates_T.pb",
             ),
         ),
         OfficialProvider(

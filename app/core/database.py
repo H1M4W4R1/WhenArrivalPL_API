@@ -77,6 +77,17 @@ class Database:
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (provider_slug, trip_id, stop_sequence)
                 );
+                CREATE TABLE IF NOT EXISTS realtime_trip_cancellations (
+                    provider_slug TEXT NOT NULL,
+                    trip_id TEXT NOT NULL,
+                    PRIMARY KEY (provider_slug, trip_id)
+                );
+                CREATE TABLE IF NOT EXISTS realtime_skipped_stops (
+                    provider_slug TEXT NOT NULL,
+                    trip_id TEXT NOT NULL,
+                    stop_sequence INTEGER NOT NULL,
+                    PRIMARY KEY (provider_slug, trip_id, stop_sequence)
+                );
                 CREATE TABLE IF NOT EXISTS ticket_machines (
                     provider_slug TEXT NOT NULL,
                     machine_id TEXT NOT NULL,

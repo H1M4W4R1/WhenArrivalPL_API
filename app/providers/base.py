@@ -16,6 +16,10 @@ class TransitProvider(ABC):
         """Return one or more static GTFS archives that form this provider's schedule."""
         return (self.static_url,)
 
+    def trip_update_urls(self) -> tuple[str, ...]:
+        """Return every GTFS-Realtime TripUpdates feed for this provider."""
+        return (self.trip_updates_url,) if self.trip_updates_url is not None else ()
+
     @property
     def enabled(self) -> bool:
         """Whether required credentials are present."""
