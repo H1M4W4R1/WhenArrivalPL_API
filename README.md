@@ -2,8 +2,10 @@
 
 Reduced FastAPI/SQLite transit data for embedded clients. Data is kept per provider
 and uses public GTFS sources. Gdańsk uses ZTM's official static GTFS, GTFS-RT Trip
-Updates, and ticket-machine feed. Other public Polish GTFS feeds are sourced from
-[mkuran.pl/gtfs](https://mkuran.pl/gtfs/).
+Updates, and ticket-machine feed. Municipal feeds are sourced from
+[mkuran.pl/gtfs](https://mkuran.pl/gtfs/) where available, otherwise from their
+official provider endpoints. Kraków's three official archives are merged under the
+single `krakow` provider.
 
 ## Run
 

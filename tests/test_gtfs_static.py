@@ -5,7 +5,11 @@ import zipfile
 from pathlib import Path
 
 from app.core.database import Database
-from app.repositories.gtfs_static import parse_static_feed, replace_static_feed_from_payload
+from app.repositories.gtfs_static import (
+    append_static_feed_from_payload,
+    parse_static_feed,
+    replace_static_feed_from_payload,
+)
 
 
 def test_skips_invalid_dates_and_keeps_gtfs_after_midnight_times() -> None:
@@ -62,6 +66,43 @@ def test_streaming_import_populates_database_without_materialising_stop_times(tm
     assert [tuple(row) for row in stops] == [("S1", "Central")]
     assert [tuple(row) for row in service_dates] == [("weekday", "2026-08-28")]
     assert [tuple(row) for row in departures] == [("T1", "S1", 1, "weekday", 32_460, "6", "Harbour")]
+
+
+def test_streaming_import_merges_multiple_static_archives(tmp_path: Path) -> None:
+    first_payload = _feed_zip(
+        {
+            "stops.txt": "stop_id,stop_name\nS1,Central\n",
+            "routes.txt": "route_id,route_short_name\nR1,1\n",
+            "trips.txt": "route_id,service_id,trip_id\nR1,weekday,T1\n",
+            "calendar_dates.txt": "service_id,date,exception_type\nweekday,20260828,1\n",
+            "stop_times.txt": "trip_id,stop_id,stop_sequence,departure_time\nT1,S1,1,09:01:00\n",
+        }
+    )
+    second_payload = _feed_zip(
+        {
+            "stops.txt": "stop_id,stop_name\nS2,Harbour\n",
+            "routes.txt": "route_id,route_short_name\nR2,2\n",
+            "trips.txt": "route_id,service_id,trip_id\nR2,weekend,T2\n",
+            "calendar_dates.txt": "service_id,date,exception_type\nweekend,20260829,1\n",
+            "stop_times.txt": "trip_id,stop_id,stop_sequence,departure_time\nT2,S2,1,10:01:00\n",
+        }
+    )
+    database = Database(tmp_path / "transit.sqlite3")
+    database.initialize()
+
+    with database.connection() as connection:
+        connection.execute("INSERT INTO providers(slug, city) VALUES ('krakow', 'Kraków')")
+        replace_static_feed_from_payload(connection, "krakow", first_payload)
+        append_static_feed_from_payload(connection, "krakow", second_payload)
+        stops = connection.execute(
+            "SELECT stop_id FROM stops WHERE provider_slug = 'krakow' ORDER BY stop_id"
+        ).fetchall()
+        departures = connection.execute(
+            "SELECT trip_id FROM departures WHERE provider_slug = 'krakow' ORDER BY trip_id"
+        ).fetchall()
+
+    assert [tuple(row) for row in stops] == [("S1",), ("S2",)]
+    assert [tuple(row) for row in departures] == [("T1",), ("T2",)]
 
 
 def _feed_zip(files: dict[str, str]) -> bytes:

@@ -52,21 +52,26 @@ def replace_static_feed(connection: sqlite3.Connection, provider_slug: str, feed
 
 
 def replace_static_feed_from_payload(connection: sqlite3.Connection, provider_slug: str, payload: bytes) -> None:
-    """Replace static data while streaming large stop-time CSV files in bounded batches."""
+    """Replace static data while streaming a large stop-time CSV file in bounded batches."""
+    _delete_static_feed(connection, provider_slug)
+    append_static_feed_from_payload(connection, provider_slug, payload)
+
+
+def append_static_feed_from_payload(connection: sqlite3.Connection, provider_slug: str, payload: bytes) -> None:
+    """Append one schedule archive to a provider without materialising stop times."""
     connection.execute("PRAGMA temp_store = FILE")
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         routes = _routes(_iter_csv(archive, "routes.txt"))
         _stage_trips(connection, _iter_csv(archive, "trips.txt"), routes)
         stops = tuple(_parse_stops(_iter_csv(archive, "stops.txt")))
         service_dates = tuple(_service_dates(archive))
-        _delete_static_feed(connection, provider_slug)
         connection.executemany(
-            """INSERT INTO stops(provider_slug, stop_id, stop_name, stop_code, latitude, longitude)
+            """INSERT OR REPLACE INTO stops(provider_slug, stop_id, stop_name, stop_code, latitude, longitude)
                VALUES (?, ?, ?, ?, ?, ?)""",
             ((provider_slug, *item) for item in stops),
         )
         connection.executemany(
-            "INSERT INTO service_dates(provider_slug, service_id, service_date) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO service_dates(provider_slug, service_id, service_date) VALUES (?, ?, ?)",
             ((provider_slug, *item) for item in service_dates),
         )
         _insert_departures(connection, provider_slug, _iter_csv(archive, "stop_times.txt"))
@@ -80,6 +85,7 @@ def _delete_static_feed(connection: sqlite3.Connection, provider_slug: str) -> N
 def _stage_trips(
     connection: sqlite3.Connection, rows: Iterable[Mapping[str, str]], routes: Mapping[str, str]
 ) -> None:
+    connection.execute("DROP TABLE IF EXISTS gtfs_import_trips")
     connection.execute(
         """CREATE TEMP TABLE gtfs_import_trips (
                trip_id TEXT PRIMARY KEY,
@@ -94,7 +100,9 @@ def _stage_trips(
         service_id = row.get("service_id", "").strip()
         route_id = row.get("route_id", "").strip()
         if trip_id and service_id:
-            batch.append((trip_id, service_id, routes.get(route_id) or route_id, _optional_text(row.get("trip_headsign"))))
+            batch.append(
+                (trip_id, service_id, routes.get(route_id) or route_id, _optional_text(row.get("trip_headsign")))
+            )
         if len(batch) >= _INSERT_BATCH_SIZE:
             _insert_trip_batch(connection, batch)
             batch.clear()
@@ -160,7 +168,7 @@ def _insert_departure_batch(
         if (trip := trips.get(trip_id)) is not None
     )
     connection.executemany(
-        """INSERT INTO departures(provider_slug, trip_id, stop_id, stop_sequence, service_id,
+        """INSERT OR REPLACE INTO departures(provider_slug, trip_id, stop_id, stop_sequence, service_id,
            route_name, destination, scheduled_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         departures,
     )
@@ -179,7 +187,9 @@ def _iter_csv(archive: zipfile.ZipFile, filename: str) -> Iterator[dict[str, str
         raise ValueError(f"GTFS archive lacks required {filename}") from error
 
 
-def _parse_stops(rows: Iterable[Mapping[str, str]]) -> Iterable[tuple[str, str, str | None, float | None, float | None]]:
+def _parse_stops(
+    rows: Iterable[Mapping[str, str]],
+) -> Iterable[tuple[str, str, str | None, float | None, float | None]]:
     for row in rows:
         stop_id = row.get("stop_id", "").strip()
         name = row.get("stop_name", "").strip()

@@ -3,13 +3,13 @@
 from fastapi import APIRouter, HTTPException, Path, Query, Request
 
 from app.core.database import Database
-from app.repositories.transit_queries import schedule, stops, ticket_machines
 from app.models.departure_model import DepartureModel
 from app.models.health_model import HealthModel
 from app.models.provider_model import ProviderModel
 from app.models.stop_model import StopModel
 from app.models.ticket_machine_model import TicketMachineModel
 from app.providers.base import TransitProvider
+from app.repositories.transit_queries import schedule, stops, ticket_machines
 
 router = APIRouter()
 

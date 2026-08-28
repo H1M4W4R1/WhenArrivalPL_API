@@ -12,10 +12,10 @@ from typing import cast
 from urllib.request import Request, urlopen
 
 from app.core.database import Database
-from app.repositories.gtfs_realtime import replace_realtime_delays
-from app.repositories.gtfs_static import replace_static_feed_from_payload
-from app.repositories.ticket_machines import replace_ticket_machines
 from app.providers.base import TransitProvider
+from app.repositories.gtfs_realtime import replace_realtime_delays
+from app.repositories.gtfs_static import append_static_feed_from_payload, replace_static_feed_from_payload
+from app.repositories.ticket_machines import replace_ticket_machines
 
 LOGGER = logging.getLogger(__name__)
 # Warsaw's public GTFS archive exceeds 100 MiB. Keep a finite limit because source
@@ -58,17 +58,23 @@ class RefreshService:
             tempfile.TemporaryDirectory(prefix="iot-open-api-static-") as directory,
             ProcessPoolExecutor(max_workers=min(_STATIC_WORKER_COUNT, len(due_providers))) as executor,
         ):
-            tasks = [
-                loop.run_in_executor(
-                    executor,
-                    _build_static_database,
-                    provider.slug,
-                    provider.city,
-                    provider.static_url,
-                    str(Path(directory) / f"{provider.slug}.sqlite3"),
+            tasks = []
+            for provider in due_providers:
+                try:
+                    static_urls = await asyncio.to_thread(provider.static_feed_urls)
+                except Exception:
+                    LOGGER.exception("Could not resolve static feed URL for provider %s", provider.slug)
+                    continue
+                tasks.append(
+                    loop.run_in_executor(
+                        executor,
+                        _build_static_database,
+                        provider.slug,
+                        provider.city,
+                        static_urls,
+                        str(Path(directory) / f"{provider.slug}.sqlite3"),
+                    )
                 )
-                for provider in due_providers
-            ]
             for task in asyncio.as_completed(tasks):
                 try:
                     provider_slug, staged_path = await task
@@ -126,14 +132,25 @@ class RefreshService:
         return datetime.now(UTC) - last_updated.astimezone(UTC) >= self._static_refresh_interval
 
 
-def _build_static_database(provider_slug: str, city: str, static_url: str, database_path: str) -> tuple[str, str]:
+def _build_static_database(
+    provider_slug: str,
+    city: str,
+    static_urls: tuple[str, ...],
+    database_path: str,
+) -> tuple[str, str]:
     """Build one provider database in a separate process before it is published."""
+    if not static_urls:
+        raise ValueError(f"Provider {provider_slug} has no static GTFS URL")
     database = Database(Path(database_path))
     database.initialize()
-    static_payload = _download(static_url, _MAX_STATIC_BYTES)
     with database.connection() as connection:
         connection.execute("INSERT INTO providers(slug, city) VALUES (?, ?)", (provider_slug, city))
-        replace_static_feed_from_payload(connection, provider_slug, static_payload)
+        for index, static_url in enumerate(static_urls):
+            static_payload = _download(static_url, _MAX_STATIC_BYTES)
+            if index == 0:
+                replace_static_feed_from_payload(connection, provider_slug, static_payload)
+            else:
+                append_static_feed_from_payload(connection, provider_slug, static_payload)
     return provider_slug, database_path
 
 

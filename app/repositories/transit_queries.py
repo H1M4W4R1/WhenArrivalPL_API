@@ -27,7 +27,13 @@ def stops(connection: sqlite3.Connection, provider_slug: str, query: str | None)
             (provider_slug,),
         ).fetchall()
     return [
-        StopModel(id=row["stop_id"], name=row["stop_name"], latitude=row["latitude"], longitude=row["longitude"], code=row["stop_code"])
+        StopModel(
+            id=row["stop_id"],
+            name=row["stop_name"],
+            latitude=row["latitude"],
+            longitude=row["longitude"],
+            code=row["stop_code"],
+        )
         for row in rows
     ]
 
@@ -99,7 +105,9 @@ def schedule(
     result: list[DepartureModel] = []
     for row in rows:
         departure_date = date_from_isoformat(row["service_date"])
-        scheduled_at = datetime.combine(departure_date, time.min, tzinfo=_WARSAW) + timedelta(seconds=row["scheduled_seconds"])
+        scheduled_at = datetime.combine(departure_date, time.min, tzinfo=_WARSAW) + timedelta(
+            seconds=row["scheduled_seconds"]
+        )
         result.append(
             DepartureModel(
                 trip_id=row["trip_id"],
