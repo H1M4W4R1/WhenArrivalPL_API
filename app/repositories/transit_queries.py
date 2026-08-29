@@ -103,7 +103,10 @@ def schedule(
                )
                AND ((sd.service_date = ? AND d.scheduled_seconds >= ?)
                     OR (sd.service_date = ? AND d.scheduled_seconds >= 86400))
-           ORDER BY delay_seconds ASC, d.scheduled_seconds ASC LIMIT ?""",
+           ORDER BY julianday(sd.service_date) + (d.scheduled_seconds + COALESCE(rt.delay_seconds, 0)) / 86400.0 ASC,
+                    d.trip_id ASC,
+                    d.stop_sequence ASC
+           LIMIT ?""",
         (
             provider_slug,
             normalized_stop_name,

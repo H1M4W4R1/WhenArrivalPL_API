@@ -8,7 +8,7 @@ from app.core.database import Database
 from app.repositories.transit_queries import schedule, stops
 
 
-def test_schedule_is_ordered_by_delay_and_contains_estimated_time(tmp_path: Path) -> None:
+def test_schedule_is_ordered_by_nearest_estimated_time_and_contains_estimated_time(tmp_path: Path) -> None:
     database = Database(tmp_path / "transit.sqlite3")
     database.initialize()
     with database.connection() as connection:
@@ -17,7 +17,7 @@ def test_schedule_is_ordered_by_delay_and_contains_estimated_time(tmp_path: Path
         connection.execute("INSERT INTO service_dates VALUES ('gdansk', 'weekday', '2026-08-28')")
         connection.execute("INSERT INTO departures VALUES ('gdansk', 'T1', 'S1', 1, 'weekday', 32460, '6', 'Harbour')")
         connection.execute("INSERT INTO departures VALUES ('gdansk', 'T2', 'S1', 1, 'weekday', 32520, '6', 'Airport')")
-        connection.execute("INSERT INTO realtime_delays VALUES ('gdansk', 'T1', 1, 180, '2026-08-28T09:00:00+00:00')")
+        connection.execute("INSERT INTO realtime_delays VALUES ('gdansk', 'T1', 1, 30, '2026-08-28T09:00:00+00:00')")
         result = schedule(
             connection,
             "gdansk",
@@ -26,9 +26,9 @@ def test_schedule_is_ordered_by_delay_and_contains_estimated_time(tmp_path: Path
             datetime(2026, 8, 28, 9, 0, tzinfo=ZoneInfo("Europe/Warsaw")),
         )
 
-    assert [departure.trip_id for departure in result] == ["T2", "T1"]
-    assert result[1].delay_seconds == 180
-    assert result[1].estimated_at.minute == 4
+    assert [departure.trip_id for departure in result] == ["T1", "T2"]
+    assert result[0].delay_seconds == 30
+    assert result[0].estimated_at.minute == 1
 
 
 def test_schedule_uses_fuzzy_stop_name_only_when_an_exact_name_is_absent(tmp_path: Path) -> None:
