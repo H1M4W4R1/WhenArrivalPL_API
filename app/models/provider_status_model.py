@@ -10,5 +10,6 @@ class ProviderStatusModel(RequestModelBase):
     """Current refresh state for one configured provider."""
 
     slug: str
+    city: str
     status: ProviderRefreshState
     progress: float = Field(ge=0.0, le=1.0)

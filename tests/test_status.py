@@ -32,5 +32,5 @@ def test_status_lists_every_configured_provider_before_first_refresh(tmp_path: P
 
     assert "/status" in application.openapi()["paths"]
     assert [item.model_dump(mode="json") for item in response] == [
-        {"slug": "example", "status": "pending", "progress": 0.0}
+        {"slug": "example", "city": "Example City", "status": "pending", "progress": 0.0}
     ]

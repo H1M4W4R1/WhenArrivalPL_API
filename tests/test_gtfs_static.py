@@ -33,6 +33,22 @@ def test_skips_invalid_dates_and_keeps_gtfs_after_midnight_times() -> None:
     assert parsed.departures[0][4] == 90_600
 
 
+def test_normalizes_two_digit_stop_position_suffixes() -> None:
+    payload = _feed_zip(
+        {
+            "stops.txt": "stop_id,stop_name\nS1,Abrahama 01\nS2,Abrahama 02\nS3,Route 6\n",
+            "routes.txt": "route_id,route_short_name\nR1,6\n",
+            "trips.txt": "route_id,service_id,trip_id\nR1,weekday,T1\n",
+            "calendar_dates.txt": "service_id,date,exception_type\nweekday,20260828,1\n",
+            "stop_times.txt": "trip_id,stop_id,stop_sequence,departure_time\nT1,S1,1,09:01:00\n",
+        }
+    )
+
+    parsed = parse_static_feed(payload)
+
+    assert [stop[1] for stop in parsed.stops] == ["Abrahama", "Abrahama", "Route 6"]
+
+
 def test_streaming_import_populates_database_without_materialising_stop_times(tmp_path: Path) -> None:
     payload = _feed_zip(
         {

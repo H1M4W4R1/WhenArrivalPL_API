@@ -62,3 +62,35 @@ def test_stops_search_returns_only_fuzzy_name_matches(tmp_path: Path) -> None:
         result = stops(connection, "gdansk", "station")
 
     assert [stop.id for stop in result] == ["S1"]
+
+
+def test_stop_lists_group_positions_and_schedule_uses_the_normalized_name(tmp_path: Path) -> None:
+    database = Database(tmp_path / "transit.sqlite3")
+    database.initialize()
+    with database.connection() as connection:
+        connection.execute("INSERT INTO providers(slug, city) VALUES ('gdansk', 'Gdańsk')")
+        connection.execute("INSERT INTO stops VALUES ('gdansk', 'S1', 'Main Station 01', NULL, NULL, NULL)")
+        connection.execute("INSERT INTO stops VALUES ('gdansk', 'S2', 'Main Station 02', NULL, NULL, NULL)")
+        connection.execute("INSERT INTO stops VALUES ('gdansk', 'S3', 'Main Station North 01', NULL, NULL, NULL)")
+        connection.execute("INSERT INTO service_dates VALUES ('gdansk', 'weekday', '2026-08-28')")
+        connection.execute("INSERT INTO departures VALUES ('gdansk', 'T1', 'S1', 1, 'weekday', 32460, '6', 'Harbour')")
+        connection.execute("INSERT INTO departures VALUES ('gdansk', 'T2', 'S2', 1, 'weekday', 32520, '6', 'Airport')")
+        connection.execute("INSERT INTO departures VALUES ('gdansk', 'T3', 'S3', 1, 'weekday', 32580, '6', 'North')")
+    database.initialize()
+
+    with database.connection() as connection:
+        stop_result = stops(connection, "gdansk", "main station")
+        schedule_result = schedule(
+            connection,
+            "gdansk",
+            "Main Station 01",
+            10,
+            datetime(2026, 8, 28, 9, 0, tzinfo=ZoneInfo("Europe/Warsaw")),
+        )
+
+    assert [(stop.id, stop.name) for stop in stop_result] == [
+        ("S1", "Main Station"),
+        ("S3", "Main Station North"),
+    ]
+    assert [departure.trip_id for departure in schedule_result] == ["T1", "T2"]
+    assert {departure.stop_name for departure in schedule_result} == {"Main Station"}

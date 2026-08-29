@@ -4,6 +4,7 @@ import sqlite3
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from app.core.stop_name import normalize_stop_name
 from app.models.departure_model import DepartureModel
 from app.models.stop_model import StopModel
 from app.models.ticket_machine_model import TicketMachineModel
@@ -26,16 +27,23 @@ def stops(connection: sqlite3.Connection, provider_slug: str, query: str | None)
                WHERE provider_slug = ? ORDER BY stop_name, stop_id LIMIT 5000""",
             (provider_slug,),
         ).fetchall()
-    return [
-        StopModel(
-            id=row["stop_id"],
-            name=row["stop_name"],
-            latitude=row["latitude"],
-            longitude=row["longitude"],
-            code=row["stop_code"],
+    seen_names: set[str] = set()
+    result: list[StopModel] = []
+    for row in rows:
+        name = normalize_stop_name(row["stop_name"])
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+        result.append(
+            StopModel(
+                id=row["stop_id"],
+                name=name,
+                latitude=row["latitude"],
+                longitude=row["longitude"],
+                code=row["stop_code"],
+            )
         )
-        for row in rows
-    ]
+    return result
 
 
 def ticket_machines(connection: sqlite3.Connection, provider_slug: str) -> list[TicketMachineModel]:
@@ -61,6 +69,7 @@ def schedule(
     connection: sqlite3.Connection, provider_slug: str, stop_name: str | None, count: int, now: datetime | None = None
 ) -> list[DepartureModel]:
     """Return active departures, using an exact stop match before a fuzzy fallback."""
+    normalized_stop_name = normalize_stop_name(stop_name) if stop_name is not None else None
     current = now.astimezone(_WARSAW) if now is not None else datetime.now(_WARSAW)
     service_date = current.date()
     previous_service_date = service_date - timedelta(days=1)
@@ -97,11 +106,11 @@ def schedule(
            ORDER BY delay_seconds ASC, d.scheduled_seconds ASC LIMIT ?""",
         (
             provider_slug,
-            stop_name,
-            stop_name,
+            normalized_stop_name,
+            normalized_stop_name,
             provider_slug,
-            stop_name,
-            f"%{stop_name}%" if stop_name is not None else None,
+            normalized_stop_name,
+            f"%{normalized_stop_name}%" if normalized_stop_name is not None else None,
             service_date.isoformat(),
             today_seconds,
             previous_service_date.isoformat(),
@@ -117,7 +126,7 @@ def schedule(
         result.append(
             DepartureModel(
                 trip_id=row["trip_id"],
-                stop_name=row["stop_name"],
+                stop_name=normalize_stop_name(row["stop_name"]),
                 route=row["route_name"],
                 destination=row["destination"],
                 scheduled_at=scheduled_at,

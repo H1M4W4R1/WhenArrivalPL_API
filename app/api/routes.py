@@ -53,10 +53,21 @@ def health(request: Request) -> HealthModel:
 @router.get("/status", response_model=list[ProviderStatusModel])
 def provider_status(request: Request) -> list[ProviderStatusModel]:
     """Report current refresh state and progress for every configured provider."""
-    return [
-        ProviderStatusModel(slug=item.slug, status=item.state, progress=item.progress)
-        for item in _refresh_service(request).statuses()
-    ]
+    providers_by_slug = _providers(request)
+    statuses: list[ProviderStatusModel] = []
+    for item in _refresh_service(request).statuses():
+        provider = providers_by_slug.get(item.slug)
+        if provider is None:
+            raise RuntimeError(f"Provider metadata is unavailable for status: {item.slug}")
+        statuses.append(
+            ProviderStatusModel(
+                slug=item.slug,
+                city=provider.city,
+                status=item.state,
+                progress=item.progress,
+            )
+        )
+    return statuses
 
 
 @router.get("/transit", response_model=list[ProviderModel])

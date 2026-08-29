@@ -30,7 +30,7 @@ All responses are JSON. Provider slugs come from `GET /transit`. Unknown provide
 | Method and path | Parameters | Response | Notes |
 | --- | --- | --- | --- |
 | `GET /health` | — | `{ "status": "ok", "providers": 25 }` | `providers` is the number configured for this server, not always 25. |
-| `GET /status` | — | `[{ "slug", "status", "progress" }]` | Refresh state for each configured provider. `progress` is from `0.0` to `1.0`. |
+| `GET /status` | — | `[{ "slug", "city", "status", "progress" }]` | Refresh state for each configured provider. `city` is the full city name; `progress` is from `0.0` to `1.0`. |
 | `GET /transit` | — | `[{ "slug", "city", "enabled", "has_realtime" }]` | Lists active configured providers. `has_realtime` means a GTFS-RT TripUpdates feed is configured. |
 | `GET /transit/{provider}/stops` | optional `query` (1–100 characters) | `[{ "id", "name", "latitude", "longitude", "code" }]` | Lists up to 5,000 stops; with `query`, returns up to 500 case-insensitive name matches. |
 | `GET /transit/{provider}/stops/{stop_name}` | URL-encoded `stop_name` (1–100 characters) | `[{ "id", "name", "latitude", "longitude", "code" }]` | Case-insensitive partial-name search, limited to 500 matches. |
@@ -39,6 +39,8 @@ All responses are JSON. Provider slugs come from `GET /transit`. Unknown provide
 | `GET /transit/{provider}/schedule/{stop_name}/{count}` | URL-encoded `stop_name` (1–150 characters); `count` (1–100) | `[{ "trip_id", "stop_name", "route", "destination", "scheduled_at", "estimated_at", "delay_seconds" }]` | Next departures at a stop. An exact case-insensitive name match takes precedence; otherwise a partial-name match is used. |
 
 Schedule times are ISO 8601 datetimes in the `Europe/Warsaw` time zone. `estimated_at` equals `scheduled_at + delay_seconds`. For static-only providers, `delay_seconds` is `0`; a GTFS-RT feed can also report cancelled trips and skipped stops, which are omitted. Results are ordered by lowest delay first and then scheduled time.
+
+Stop names omit a trailing two-digit GTFS boarding-position suffix, such as `Abrahama 01` becoming `Abrahama`. This groups physical platforms into one stop for stop lists and lets schedule lookups use the human-readable name.
 
 Example requests:
 

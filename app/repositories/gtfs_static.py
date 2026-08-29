@@ -9,6 +9,8 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from app.core.stop_name import normalize_stop_name
+
 _INSERT_BATCH_SIZE = 5_000
 
 
@@ -202,7 +204,7 @@ def _parse_stops(
 ) -> Iterable[tuple[str, str, str | None, float | None, float | None]]:
     for row in rows:
         stop_id = row.get("stop_id", "").strip()
-        name = row.get("stop_name", "").strip()
+        name = normalize_stop_name(row.get("stop_name", ""))
         if stop_id and name:
             yield (
                 stop_id,

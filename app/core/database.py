@@ -5,6 +5,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from app.core.stop_name import normalize_stop_name
+
 
 class Database:
     """Creates short-lived SQLite connections safe for FastAPI worker threads."""
@@ -18,6 +20,7 @@ class Database:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self._path, timeout=30.0)
         connection.row_factory = sqlite3.Row
+        connection.create_function("normalized_stop_name", 1, normalize_stop_name, deterministic=True)
         try:
             connection.execute("PRAGMA foreign_keys = ON")
             yield connection
@@ -98,4 +101,8 @@ class Database:
                     PRIMARY KEY (provider_slug, machine_id)
                 );
                 """
+            )
+            connection.execute(
+                """UPDATE stops SET stop_name = normalized_stop_name(stop_name)
+                   WHERE stop_name != normalized_stop_name(stop_name)"""
             )
