@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from app.core.stop_name import normalize_stop_name
+from app.core.stop_name import casefold_text, normalize_stop_name
 
 
 class Database:
@@ -21,6 +21,7 @@ class Database:
         connection = sqlite3.connect(self._path, timeout=30.0)
         connection.row_factory = sqlite3.Row
         connection.create_function("normalized_stop_name", 1, normalize_stop_name, deterministic=True)
+        connection.create_function("casefold_text", 1, casefold_text, deterministic=True)
         try:
             connection.execute("PRAGMA foreign_keys = ON")
             yield connection

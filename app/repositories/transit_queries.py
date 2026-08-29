@@ -17,9 +17,9 @@ def stops(connection: sqlite3.Connection, provider_slug: str, query: str | None)
     if query:
         rows = connection.execute(
             """SELECT stop_id, stop_name, latitude, longitude, stop_code FROM stops
-               WHERE provider_slug = ? AND stop_name LIKE ? COLLATE NOCASE
+               WHERE provider_slug = ? AND casefold_text(stop_name) LIKE ?
                ORDER BY stop_name, stop_id LIMIT 500""",
-            (provider_slug, f"%{query.strip()}%"),
+            (provider_slug, f"%{query.strip().casefold()}%"),
         ).fetchall()
     else:
         rows = connection.execute(
@@ -70,6 +70,7 @@ def schedule(
 ) -> list[DepartureModel]:
     """Return active departures, using an exact stop match before a fuzzy fallback."""
     normalized_stop_name = normalize_stop_name(stop_name) if stop_name is not None else None
+    casefolded_stop_name = normalized_stop_name.casefold() if normalized_stop_name is not None else None
     current = now.astimezone(_WARSAW) if now is not None else datetime.now(_WARSAW)
     service_date = current.date()
     previous_service_date = service_date - timedelta(days=1)
@@ -91,14 +92,14 @@ def schedule(
                AND skipped.trip_id IS NULL
                AND (
                    ? IS NULL
-                   OR s.stop_name = ? COLLATE NOCASE
+                   OR casefold_text(s.stop_name) = ?
                    OR (
                        NOT EXISTS (
                            SELECT 1 FROM stops AS exact_stop
                            WHERE exact_stop.provider_slug = ?
-                               AND exact_stop.stop_name = ? COLLATE NOCASE
+                               AND casefold_text(exact_stop.stop_name) = ?
                        )
-                       AND s.stop_name LIKE ? COLLATE NOCASE
+                       AND casefold_text(s.stop_name) LIKE ?
                    )
                )
                AND ((sd.service_date = ? AND d.scheduled_seconds >= ?)
@@ -109,11 +110,11 @@ def schedule(
            LIMIT ?""",
         (
             provider_slug,
-            normalized_stop_name,
-            normalized_stop_name,
+            casefolded_stop_name,
+            casefolded_stop_name,
             provider_slug,
-            normalized_stop_name,
-            f"%{normalized_stop_name}%" if normalized_stop_name is not None else None,
+            casefolded_stop_name,
+            f"%{casefolded_stop_name}%" if casefolded_stop_name is not None else None,
             service_date.isoformat(),
             today_seconds,
             previous_service_date.isoformat(),

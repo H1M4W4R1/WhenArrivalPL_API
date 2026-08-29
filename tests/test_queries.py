@@ -64,6 +64,38 @@ def test_stops_search_returns_only_fuzzy_name_matches(tmp_path: Path) -> None:
     assert [stop.id for stop in result] == ["S1"]
 
 
+def test_stop_search_matches_polish_letters_regardless_of_case(tmp_path: Path) -> None:
+    database = Database(tmp_path / "transit.sqlite3")
+    database.initialize()
+    with database.connection() as connection:
+        connection.execute("INSERT INTO providers(slug, city) VALUES ('polish-trains', 'Polskie koleje')")
+        connection.execute("INSERT INTO stops VALUES ('polish-trains', 'S1', 'Mława', NULL, NULL, NULL)")
+        result = stops(connection, "polish-trains", "MŁAWA")
+
+    assert [(stop.id, stop.name) for stop in result] == [("S1", "Mława")]
+
+
+def test_schedule_matches_polish_letters_regardless_of_case(tmp_path: Path) -> None:
+    database = Database(tmp_path / "transit.sqlite3")
+    database.initialize()
+    with database.connection() as connection:
+        connection.execute("INSERT INTO providers(slug, city) VALUES ('polish-trains', 'Polskie koleje')")
+        connection.execute("INSERT INTO stops VALUES ('polish-trains', 'S1', 'Mława', NULL, NULL, NULL)")
+        connection.execute("INSERT INTO service_dates VALUES ('polish-trains', 'weekday', '2026-08-28')")
+        connection.execute(
+            "INSERT INTO departures VALUES ('polish-trains', 'T1', 'S1', 1, 'weekday', 32460, 'IC', 'Warszawa')"
+        )
+        result = schedule(
+            connection,
+            "polish-trains",
+            "MŁAWA",
+            10,
+            datetime(2026, 8, 28, 9, 0, tzinfo=ZoneInfo("Europe/Warsaw")),
+        )
+
+    assert [departure.trip_id for departure in result] == ["T1"]
+
+
 def test_stop_lists_group_positions_and_schedule_uses_the_normalized_name(tmp_path: Path) -> None:
     database = Database(tmp_path / "transit.sqlite3")
     database.initialize()
