@@ -4,6 +4,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from threading import Lock
 
 from app.core.stop_name import casefold_text, normalize_stop_name
 
@@ -13,6 +14,7 @@ class Database:
 
     def __init__(self, path: Path) -> None:
         self._path = path
+        self._write_lock = Lock()
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
@@ -24,6 +26,7 @@ class Database:
         connection.create_function("casefold_text", 1, casefold_text, deterministic=True)
         try:
             connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA busy_timeout = 30000")
             yield connection
             connection.commit()
         except BaseException:
@@ -32,9 +35,16 @@ class Database:
         finally:
             connection.close()
 
+    @contextmanager
+    def write_connection(self) -> Iterator[sqlite3.Connection]:
+        """Yield an exclusive in-process writer connection for this database."""
+        with self._write_lock, self.connection() as connection:
+            yield connection
+
     def initialize(self) -> None:
         """Create the local schema when it does not already exist."""
-        with self.connection() as connection:
+        with self.write_connection() as connection:
+            connection.execute("PRAGMA journal_mode = WAL")
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS providers (

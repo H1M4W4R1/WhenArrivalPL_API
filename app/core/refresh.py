@@ -121,7 +121,7 @@ class RefreshService:
             self._status_tracker.set(provider.slug, ProviderRefreshState.DOWNLOADING_DELAYS, 0.0)
             realtime_payloads = tuple(_download(url, _MAX_AUXILIARY_BYTES) for url in trip_update_urls)
             self._status_tracker.set(provider.slug, ProviderRefreshState.UPDATING_DELAYS, 0.75)
-            with self._database.connection() as connection:
+            with self._database.write_connection() as connection:
                 replace_realtime_delays(connection, provider.slug, realtime_payloads)
                 connection.execute(
                     "UPDATE providers SET realtime_updated_at = ? WHERE slug = ?",
@@ -132,12 +132,12 @@ class RefreshService:
             machines_payload = _download(provider.ticket_machines_url, _MAX_AUXILIARY_BYTES)
             machines_document = json.loads(machines_payload)
             self._status_tracker.set(provider.slug, ProviderRefreshState.UPDATING_TICKET_MACHINES, 0.75)
-            with self._database.connection() as connection:
+            with self._database.write_connection() as connection:
                 replace_ticket_machines(connection, provider.slug, machines_document)
 
     def _install_static_database(self, provider_slug: str, staged_path: Path) -> None:
         """Atomically copy one completed worker database into the shared API database."""
-        with self._database.connection() as connection:
+        with self._database.write_connection() as connection:
             connection.execute("ATTACH DATABASE ? AS staged", (str(staged_path),))
             for table_name in (
                 "stops",
@@ -157,7 +157,7 @@ class RefreshService:
             )
 
     def _ensure_provider(self, provider: TransitProvider) -> None:
-        with self._database.connection() as connection:
+        with self._database.write_connection() as connection:
             connection.execute(
                 "INSERT OR IGNORE INTO providers(slug, city) VALUES (?, ?)",
                 (provider.slug, provider.city),
@@ -188,7 +188,7 @@ def _build_static_database(
         raise ValueError(f"Provider {provider_slug} has no static GTFS URL")
     database = Database(Path(database_path))
     database.initialize()
-    with database.connection() as connection:
+    with database.write_connection() as connection:
         connection.execute("INSERT INTO providers(slug, city) VALUES (?, ?)", (provider_slug, city))
         for index, static_url in enumerate(static_urls):
             static_payload = _download(static_url, _MAX_STATIC_BYTES)
