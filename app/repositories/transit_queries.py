@@ -75,6 +75,7 @@ def schedule(
     service_date = current.date()
     previous_service_date = service_date - timedelta(days=1)
     today_seconds = _seconds_since_midnight(current)
+    previous_day_seconds = 86400 + today_seconds
     rows = connection.execute(
         """SELECT d.trip_id, s.stop_name, d.scheduled_seconds, d.route_name, d.destination,
                   COALESCE(rt.delay_seconds, 0) AS delay_seconds, sd.service_date
@@ -103,7 +104,7 @@ def schedule(
                    )
                )
                AND ((sd.service_date = ? AND d.scheduled_seconds >= ?)
-                    OR (sd.service_date = ? AND d.scheduled_seconds >= 86400))
+                    OR (sd.service_date = ? AND d.scheduled_seconds >= ?))
            ORDER BY julianday(sd.service_date) + (d.scheduled_seconds + COALESCE(rt.delay_seconds, 0)) / 86400.0 ASC,
                     d.trip_id ASC,
                     d.stop_sequence ASC
@@ -118,6 +119,7 @@ def schedule(
             service_date.isoformat(),
             today_seconds,
             previous_service_date.isoformat(),
+            previous_day_seconds,
             count,
         ),
     ).fetchall()

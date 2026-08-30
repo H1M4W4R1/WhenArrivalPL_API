@@ -52,6 +52,26 @@ def test_schedule_uses_fuzzy_stop_name_only_when_an_exact_name_is_absent(tmp_pat
     assert len(provider_result) == 1
 
 
+def test_schedule_excludes_passed_overnight_departures_from_the_previous_service_date(tmp_path: Path) -> None:
+    database = Database(tmp_path / "transit.sqlite3")
+    database.initialize()
+    with database.connection() as connection:
+        connection.execute("INSERT INTO providers(slug, city) VALUES ('gdansk', 'Gdańsk')")
+        connection.execute("INSERT INTO stops VALUES ('gdansk', 'S1', 'Central', NULL, NULL, NULL)")
+        connection.execute("INSERT INTO service_dates VALUES ('gdansk', 'weekday', '2026-08-27')")
+        connection.execute("INSERT INTO departures VALUES ('gdansk', 'T1', 'S1', 1, 'weekday', 90000, '6', 'Past')")
+        connection.execute("INSERT INTO departures VALUES ('gdansk', 'T2', 'S1', 1, 'weekday', 97200, '6', 'Upcoming')")
+        result = schedule(
+            connection,
+            "gdansk",
+            "Central",
+            10,
+            datetime(2026, 8, 28, 2, 0, tzinfo=ZoneInfo("Europe/Warsaw")),
+        )
+
+    assert [departure.trip_id for departure in result] == ["T2"]
+
+
 def test_stops_search_returns_only_fuzzy_name_matches(tmp_path: Path) -> None:
     database = Database(tmp_path / "transit.sqlite3")
     database.initialize()
